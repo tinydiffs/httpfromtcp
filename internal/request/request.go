@@ -8,6 +8,7 @@ import (
 )
 
 const bufferSize int = 8
+const crlf string = "\r\n"
 
 type state int
 
@@ -68,12 +69,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 func parseRequestLine(line []byte) (int, RequestLine, error) {
 
 	lineString := string(line)
-	parts := strings.Split(lineString, "\r\n")
+	parts := strings.Split(lineString, crlf)
 	if len(parts) < 1 {
 		return 0, RequestLine{}, fmt.Errorf("request parsing error")
 	}
 
-	// If no \r\n was found
+	// If no crlf was found
 	if len(parts) < 2 {
 		return 0, RequestLine{}, nil
 	}
