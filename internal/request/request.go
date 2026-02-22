@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"unicode"
+
+	"github.com/tinydiffs/httpfromtcp/internal/headers"
 )
 
 const bufferSize int = 8
@@ -14,12 +16,14 @@ type state int
 
 const(
 	initialized state = iota
+	requestStateParsingHeaders
 	done
 )
 
 type Request struct {
-	readState	  state
+	readState	state
 	RequestLine RequestLine
+	Headers		headers.Headers
 }
 
 type RequestLine struct {
@@ -34,6 +38,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	readToIndex := 0
 	req := Request{
 		readState: initialized,
+		Headers: headers.NewHeaders(),
 	}
 
 	for req.readState != done {
@@ -46,8 +51,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		readbytes, err := reader.Read(buff[readToIndex:])
 		if err == io.EOF {
-			req.readState = done
-			break
+			return nil, fmt.Errorf("incomplete request, in state: %d, read n bytes on EOF: %d", req.readState, readbytes)
 		}
 		if err != nil {
 			return &Request{}, fmt.Errorf("error reading file %v", err)
@@ -112,25 +116,52 @@ func parseRequestLine(line []byte) (int, RequestLine, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 
+	totalBytesParsed := 0
+	for r.readState != done {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			break
+		}
+		totalBytesParsed += n
+	}
+
+	return totalBytesParsed, nil	
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.readState {
 	case initialized:
-		consumedbytes, reqline, err := parseRequestLine(data)
+		consumedBytes, reqline, err := parseRequestLine(data)
 		if err != nil {
 			return 0, err
 		}
 
-		if consumedbytes == 0 {
+		if consumedBytes == 0 {
 			return 0, nil
 		}
 
 		r.RequestLine = reqline
-		r.readState = done
+		r.readState = requestStateParsingHeaders
 
-		return consumedbytes, nil
+		return consumedBytes, nil
+
+	case requestStateParsingHeaders:
+		consumedBytes, finished, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if finished {
+			r.readState = done
+			return consumedBytes, nil
+		}
+		return consumedBytes, nil
+		
 	case done:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
 		return 0, fmt.Errorf("error: unknown state")
 	}
-	
 }

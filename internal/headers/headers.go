@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -40,6 +41,22 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("format error: whitespace in field-name")
 	}
 
-	h[field_name] = field_value
+	tokenChars := "!#$%&'*+-.^_`|~"
+	
+	for _, c := range []byte(field_name) {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		if slices.Contains([]byte(tokenChars), c) {
+			continue
+		}
+		return 0, false, fmt.Errorf("format error: unrecognised character in field-name")
+	}
+
+	if h[strings.ToLower(field_name)] == "" {
+		h[strings.ToLower(field_name)] = field_value
+	} else {
+		h[strings.ToLower(field_name)] = h[strings.ToLower(field_name)] + ", " + field_value
+	}
 	return len(headerString) + 2, false, nil
 }
