@@ -21,7 +21,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	idx := bytes.Index(data, []byte(crlf))
 
 	if idx == 0 {
-		return 0, true, nil
+		return 2, true, nil
 	}
 	if idx == -1 {
 		return 0, false, nil
@@ -59,4 +59,9 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		h[strings.ToLower(field_name)] = h[strings.ToLower(field_name)] + ", " + field_value
 	}
 	return len(headerString) + 2, false, nil
+}
+
+func(h Headers) Get(key string) string{
+
+	return h[strings.ToLower(key)]
 }
