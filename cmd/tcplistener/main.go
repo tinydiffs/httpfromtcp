@@ -39,6 +39,9 @@ func main() {
 			fmt.Printf("- %s: %s\n", key, value)
 		}
 
+		fmt.Println("Body:")
+		fmt.Println(string(req.Body))
+
 		// outputChan := getLinesChannel(conn)
 		// for line := range(outputChan) {
 		// 	fmt.Printf("%s\n", line)
