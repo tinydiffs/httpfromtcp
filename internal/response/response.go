@@ -41,7 +41,7 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	headers := headers.NewHeaders()
 	headers["content-length"] = strconv.Itoa(contentLen)
 	headers["connection"] = "close"
-	headers["content-type"] = "text/plain"
+	headers["content-type"] = "text/html"
 	return headers
 }
 
@@ -52,6 +52,57 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 		headerPhrase := fmt.Sprintf("%s:%s%s", header, val, crlf)
 		w.Write([]byte(headerPhrase))
 	}
+	w.Write([]byte(crlf))
 
 	return nil
+}
+
+type writerState int
+
+const(
+	statusLine writerState = iota
+	header
+	body
+)
+
+type Writer struct{
+	Connection	io.Writer
+	writerState	writerState
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+
+	if w.writerState != statusLine {
+		return fmt.Errorf("statusline must be written first")
+	}
+
+	err := WriteStatusLine(w.Connection, statusCode)
+	if err != nil {
+		return err
+	}
+	w.writerState = header
+	return nil
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+
+	if w.writerState != header {
+		return fmt.Errorf("headers must be written after statusline")
+	}
+
+	err := WriteHeaders(w.Connection, headers)
+	if err != nil {
+		return err
+	}
+	w.writerState = body
+	return nil
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+
+	if w.writerState != body {
+		return 0, fmt.Errorf("body must be wrtten after headers")
+	}
+
+	return w.Connection.Write(p)
 }

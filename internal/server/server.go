@@ -5,18 +5,29 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"sync/atomic"
 
+	"github.com/tinydiffs/httpfromtcp/internal/request"
 	"github.com/tinydiffs/httpfromtcp/internal/response"
 )
 
 type Server struct{
 
 	listener	net.Listener
-	active		bool
+	active		atomic.Bool
+	handler		Handler
 
 }
 
-func Serve(port int) (*Server, error) {
+// type HandlerError struct{
+
+// 	StatusCode		response.StatusCode
+// 	Message			string
+// }
+
+type Handler func(w *response.Writer, req *request.Request)
+
+func Serve(port int, handler Handler) (*Server, error) {
 
 	listener, err := net.Listen("tcp", ":" + strconv.Itoa(port))
 	if err != nil {
@@ -25,7 +36,7 @@ func Serve(port int) (*Server, error) {
 
 	server := Server{
 		listener: listener,
-		active: true,
+		handler: handler,
 	}
 
 	go server.listen()
@@ -35,10 +46,9 @@ func Serve(port int) (*Server, error) {
 
 
 func (s *Server) Close() error {
-	s.active = false
-	err := s.listener.Close()
-	if err != nil {
-		return err
+	s.active.Store(false)
+	if s.listener != nil {
+		return s.listener.Close()
 	}
 	return nil
 }
@@ -49,9 +59,12 @@ func (s *Server) listen() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			return
+			if !s.active.Load() {
+				return
+			}
+			log.Printf("Error accepting connection: %v", err)
+			continue
 		}
-
 		go s.handle(conn)
 	}
 }
@@ -60,32 +73,80 @@ func (s *Server) listen() {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
-	// body := "Hello World!"
-
-	err := response.WriteStatusLine(conn, response.Ok)
-	if err != nil {
-		log.Printf("error writing status line: %s", err)
+	writer := response.Writer{
+		Connection: conn,
 	}
 
-	headers := response.GetDefaultHeaders(0)
-	err = response.WriteHeaders(conn, headers)
+	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		log.Printf("error writing headers: %s", err)
+		innerErr := writer.WriteStatusLine(response.BadRequest)
+		if innerErr != nil {
+			log.Printf("error writing status line: %s", innerErr)
+		}
+
+		body := []byte(fmt.Sprintf("<html><body><h1>400 Bad Request</h1><p>%v</p></body></html>", err))
+		innerErr = writer.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		if innerErr != nil {
+			log.Printf("error writing headers: %s", innerErr)
+		}
+
+		_, innerErr = writer.WriteBody(body)
+		if innerErr != nil {
+			log.Printf("error writing body: %s", innerErr)
+		}
+
+		return
 	}
 
-	conn.Write([]byte("\r\n"))
+	// buf := bytes.Buffer{}
+	
 
-	// response := fmt.Sprintf(
-	// 	"HTTP/1.1 200 OK\r\n"+
-	// 		"Content-Type: text/plain\r\n"+
-	// 		// "Content-Length: %d\r\n"+
-	// 		"\r\n"+
-	// 		"%s",
-	// 	// len(body),
-	// 	body,
-	// )
+	s.handler(&writer, req)
+	// if hErr != nil {
+	// 	err = hErr.Write(conn)
+	// 	if err != nil {
+	// 		log.Printf("error handling(writing) error: %s", err)
+	// 	}
+	// 	return
+	// }
 
-	// conn.Write([]byte(response))
+	// defaultHeaders := response.GetDefaultHeaders(buf.Len())
+	// err = response.WriteStatusLine(conn, response.Ok)
+	// if err != nil {
+	// 	log.Printf("error writing status line: %s", err)
+
+	// }
+
+	// err = response.WriteHeaders(conn, defaultHeaders)
+	// if err != nil {
+	// 	log.Printf("error writing headers: %s", err)
+	// }
+
+	// _, err = conn.Write(buf.Bytes())
+	// if err != nil {
+	// 	log.Printf("error writing budy: %s", err)
+	// }
 
 	fmt.Println("Responded!")
 }
+
+// func(h *HandlerError) Write(w io.Writer) error {
+
+// 	err := response.WriteStatusLine(w, h.StatusCode)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	defaultHeaders := response.GetDefaultHeaders(len(h.Message))
+// 	err = response.WriteHeaders(w, defaultHeaders)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	_, err = w.Write([]byte(h.Message))
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	return nil
+// }
