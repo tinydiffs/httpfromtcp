@@ -106,3 +106,29 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 
 	return w.Connection.Write(p)
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+
+	if w.writerState != body {
+		return 0, fmt.Errorf("body must be wrtten after headers")
+	}
+
+	sizeHex := strconv.FormatInt(int64(len(p)), 16)
+
+	w.Connection.Write([]byte(sizeHex))
+	w.Connection.Write([]byte(crlf))
+	writtenBytes, _ := w.Connection.Write(p)
+	w.Connection.Write([]byte(crlf))
+	return writtenBytes, nil
+}
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+
+	if w.writerState != body {
+		return 0, fmt.Errorf("body must be wrtten after headers")
+	}
+
+	writtenBytes, _ := w.Connection.Write([]byte("0"))
+	w.Connection.Write([]byte(crlf))
+	w.Connection.Write([]byte(crlf))
+	return writtenBytes, nil
+}
