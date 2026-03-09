@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -97,22 +100,28 @@ func httpBinProxy(w *response.Writer, r *request.Request) {
 		log.Print(err)
 		return
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		log.Printf("httpbin response error: %s", resp.Status)
 		return
 	}
 	w.WriteStatusLine(response.Ok)
-	headers := headers.NewHeaders()
-	headers["content-type"] = "text/plain"
-	headers["transfer-encoding"] = "chunked"
-	w.WriteHeaders(headers)
+	header := headers.NewHeaders()
+	header["Content-Type"] = "text/plain"
+	header["Transfer-Encoding"] = "chunked"
+	header["Trailer"] = "X-Content-SHA256, X-Content-Length"
+	w.WriteHeaders(header)
 
 	buf := make([]byte, 1024)
+	hasher := sha256.New()
+	length := 0
 	for {
 		readBytes, err := resp.Body.Read(buf)
 		if readBytes > 0 {
 			wroteBytes, _ := w.WriteChunkedBody(buf[:readBytes])
+			hasher.Write(buf[:readBytes])
+			length += readBytes
 			log.Printf("Read and Wrote: %d bytes", wroteBytes)
 		}
 		if err == io.EOF {
@@ -126,4 +135,11 @@ func httpBinProxy(w *response.Writer, r *request.Request) {
 	}
 
 	w.WriteChunkedBodyDone()
+	hash := hasher.Sum(nil)
+	trailer := headers.NewHeaders()
+	log.Print(hex.EncodeToString(hash))
+	log.Print(strconv.Itoa(length))
+	trailer["X-Content-SHA256"] = hex.EncodeToString(hash)
+	trailer["X-Content-Length"] = strconv.Itoa(length)
+	w.WriteTrailers(trailer)
 }

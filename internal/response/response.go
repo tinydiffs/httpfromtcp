@@ -63,6 +63,7 @@ const(
 	statusLine writerState = iota
 	header
 	body
+	trailer
 )
 
 type Writer struct{
@@ -129,6 +130,19 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 
 	writtenBytes, _ := w.Connection.Write([]byte("0"))
 	w.Connection.Write([]byte(crlf))
-	w.Connection.Write([]byte(crlf))
+	w.writerState = trailer
 	return writtenBytes, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+
+	if w.writerState != trailer {
+		return fmt.Errorf("trailers must be written after body")
+	}
+
+	err := WriteHeaders(w.Connection, h)
+	if err != nil {
+		return err
+	}
+	return nil
 }
