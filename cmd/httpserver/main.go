@@ -23,7 +23,7 @@ import (
 const port = 42069
 
 func main() {
-	serv, err := server.Serve(port, httpBinProxy)
+	serv, err := server.Serve(port, getVideo)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
@@ -142,4 +142,21 @@ func httpBinProxy(w *response.Writer, r *request.Request) {
 	trailer["X-Content-SHA256"] = hex.EncodeToString(hash)
 	trailer["X-Content-Length"] = strconv.Itoa(length)
 	w.WriteTrailers(trailer)
+}
+
+func getVideo(w *response.Writer, r *request.Request) {
+
+	if r.RequestLine.RequestTarget != "/video" {
+		log.Printf("Incorrect request for handler")
+	}
+
+	w.WriteStatusLine(response.Ok)
+	header := headers.NewHeaders()
+	header["Content-Type"] = "video/mp4"
+	w.WriteHeaders(header)
+	body, err := os.ReadFile("/var/home/dudebro/workspace/github.com/tinydiffs/httpfromtcp/assets/vim.mp4")
+	if err != nil {
+		log.Print("Error getting video")
+	}
+	w.WriteBody(body)
 }
